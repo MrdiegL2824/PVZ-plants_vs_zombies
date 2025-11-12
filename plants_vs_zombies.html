@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Mini Plants vs Zombies — Top-down (Demo)</title>
+<title>Plants vs Zombies — Ondas (config)</title>
 <style>
-  :root{--bg:#9edc6a;--cell:#8fcd5a;--grid:#76b54a}
+  :root{--bg:#9edc6a}
   html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Roboto,Arial;color:#072;}
   .wrap{display:flex;gap:12px;padding:12px}
-  .panel{width:260px;background:#fff;border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
-  .board{flex:1;display:flex;align-items:center;justify-content:center}
-  canvas{background:linear-gradient(180deg,var(--bg),#86c15a);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+  .panel{width:260px;background:#fff;border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+  .board{flex:1;display:flex;align-items:center;justify-content:center;position:relative}
+  canvas{background:linear-gradient(180deg,var(--bg),#86c15a);border-radius:6px;box-shadow:0 6px 12px rgba(0,0,0,.08)}
   .toolbar{display:flex;flex-direction:column;gap:8px}
-  .card{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:2px solid #eee;cursor:pointer}
+  .card{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:2px solid #eee;cursor:pointer;background:#fff}
   .card.locked{opacity:.5;filter:grayscale(30%)}
-  .card.selected{border-color:#6b9b3a;box-shadow:inset 0 0 0 3px rgba(107,155,58,.08)}
-  .icon{width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700}
-  .sun{background:gold;border-radius:10px}
-  .pea{background:#6fd3d6}
-  .nut{background:#d8b07a}
+  .card.selected{border-color:#6b9b3a;box-shadow:inset 0 0 0 3px rgba(107,155,58,.06)}
+  .icon{width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700}
   .info{font-size:14px}
   .status{margin-top:12px;padding:8px;border-radius:8px;background:#f4fff1}
   button{padding:8px 10px;border-radius:8px;border:0;background:#6b9b3a;color:#fff;cursor:pointer}
   .small{font-size:13px;color:#556}
-  footer{margin-top:12px;font-size:13px;color:#445}
+  #waveMsg{position:absolute;top:45%;left:0;right:0;text-align:center;font-size:44px;font-weight:800;color:#154a15;text-shadow:1px 1px 4px rgba(255,255,255,.6)}
+  #waveCounter,#zombieCounter{position:absolute;top:12px;font-weight:700;background:rgba(255,255,255,0.85);padding:6px 10px;border-radius:8px;font-size:16px;box-shadow:0 2px 6px rgba(0,0,0,0.12)}
+  #waveCounter{left:12px;}
+  #zombieCounter{right:12px;}
   @media(max-width:900px){.wrap{flex-direction:column}.panel{width:100%}}
 </style>
 </head>
@@ -33,105 +33,144 @@
     <h3>Plantas</h3>
     <div class="toolbar" id="toolbar"></div>
     <div class="status">
-      <div>Dinheiro: <strong id="money">50</strong></div>
-      <div class="small">Clique em uma planta e depois no gramado para plantar (uma por quadrado).</div>
-      <div style="margin-top:8px"><button id="startBtn">Iniciar / Pausar</button> <button id="resetBtn">Reiniciar</button></div>
+      <div>Dinheiro: <strong id="money">0</strong></div>
+      <div class="small">Clique em uma planta (esquerda) e depois no gramado para plantar.</div>
+      <div style="margin-top:8px"><button id="startBtn">Iniciar</button> <button id="resetBtn">Reiniciar</button></div>
     </div>
     <footer>
-      <div class="small">Girasol gera dinheiro automaticamente. Ervilha atira automaticamente. No é barreira.</div>
-      <div class="small">Zumbis surgem à direita e andam para a esquerda. Cada tiro reduz vida.</div>
+      <div class="small">Girasol gera dinheiro • Ervilha atira • No é barreira</div>
     </footer>
   </div>
+
   <div class="board">
     <canvas id="game" width="960" height="640"></canvas>
+    <div id="waveMsg"></div>
+    <div id="waveCounter">Onda: 0 / 0</div>
+    <div id="zombieCounter">Zumbis: 0</div>
   </div>
 </div>
+
 <script>
-// === Configs ===
+// ================= CONFIGURAÇÕES =================
+const CONFIG = {
+  // Economia
+  dinheiroInicial: 75,
+  solGanho: 25,
+  tempoGiroSol: 7, // segundos
+
+  // Zumbis
+  zumbiVida: 6,
+  zumbiVelocidade: 40, // px / segundo
+  zumbiTamanho: 0.9,
+
+  // Plantas (HP, custo, etc)
+  girasolHP: 100,
+  girasolCusto: 50,
+  ervilhaHP: 100,
+  ervilhaCusto: 100,
+  ervilhaDano: 1,
+  ervilhaFireRate: 1, // segundos entre tiros
+  noHP: 150,
+  noCusto: 75,
+
+  // Ondas: a primeira entrada pode ser {count:0, delay: X, texto: "Plantar!!!"} para preparar
+  ondas: [
+    {count:0, delay:4000, texto: "🌻 Plantar!!!"}, // preparação (não conta como onda)
+    {count:2, delay:1500, texto: "🌊 Onda 1"},
+    {count:3, delay:1200, texto: "🌊 Onda 2"},
+    {count:4, delay:1000, texto: "🌊 Onda 3"},
+    {count:5, delay:900,  texto: "🌊 Onda 4"},
+    {count:6, delay:800,  texto: "🌊 Onda 5"}
+  ]
+};
+// ================= FIM CONFIG =================
+
+
+/* ----- Variáveis e setup ----- */
 const ROWS = 5;
 const COLS = 9;
-const CELL = 96; // pixels
+const CELL = 96;
 const CANVAS_W = COLS * CELL;
 const CANVAS_H = ROWS * CELL;
-const FPS = 60;
-const START_MONEY = 50;
 
-// Plant definitions
-const PLANTS = {
-  sunflower: {name:'Girasol', cost:50, type:'sun', size:0.9, color:'#FFD050', cooldown:3, produce:25, produceTime:7, hp:100},
-  peashooter: {name:'Ervilha', cost:100, type:'shooter', size:0.9, color:'#5FD3A6', cooldown:2, dmg:1, fireRate:1,hp:100},
-  walnut: {name:'No', cost:75, type:'barrier', size:1.0, color:'#CB996B', cooldown:6, hp:120}
-};
-
-// Zombie template
-const ZOMBIE = {speed:30, hp:6, color:'#9b6b6b', size:0.9};
-
-// Game state
-let canvas = document.getElementById('game');
-let ctx = canvas.getContext('2d');
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
 canvas.width = CANVAS_W; canvas.height = CANVAS_H;
-let money = START_MONEY;
+
+const toolbarEl = document.getElementById('toolbar');
+const moneyEl = document.getElementById('money');
+const waveMsg = document.getElementById('waveMsg');
+const waveCounterEl = document.getElementById('waveCounter');
+const zombieCounterEl = document.getElementById('zombieCounter');
+
+let money = CONFIG.dinheiroInicial;
 let grid = Array.from({length:ROWS},()=>Array(COLS).fill(null));
 let plants = [];
 let bullets = [];
 let zombies = [];
+let plantCooldowns = {};
 let selectedPlantKey = null;
 let running = false;
-let lastSpawn = 0;
-let spawnInterval = 20500; // ms
 let lastTime = performance.now();
 
-// Cooldowns
-let plantCooldowns = {};
+// Waves control
+let currentWaveIndex = -1; // index into CONFIG.ondas
+let realWaveNumber = 0; // counts only waves with count>0
+let inWave = false;
 
-// UI init
-const toolbarEl = document.getElementById('toolbar');
-const moneyEl = document.getElementById('money');
+// Count real waves (exclude any with count==0)
+const totalRealWaves = CONFIG.ondas.filter(w => w.count > 0).length;
+
+/* ----- UI init (cards) ----- */
+const PLANTS = {
+  sunflower: { name:'Girasol', cost: CONFIG.girasolCusto, type:'sun', color:'#FFD050', cooldown:3, produce:CONFIG.solGanho, produceTime:CONFIG.tempoGiroSol, hp:CONFIG.girasolHP },
+  peashooter: { name:'Ervilha', cost: CONFIG.ervilhaCusto, type:'shooter', color:'#5FD3A6', cooldown:2, dmg:CONFIG.ervilhaDano, fireRate:CONFIG.ervilhaFireRate, hp:CONFIG.ervilhaHP },
+  walnut: { name:'No', cost: CONFIG.noCusto, type:'barrier', color:'#CB996B', cooldown:6, hp:CONFIG.noHP }
+};
+
 function initToolbar(){
+  toolbarEl.innerHTML = '';
   for(const key of Object.keys(PLANTS)){
     const p = PLANTS[key];
     const div = document.createElement('div');
-    div.className='card';
-    div.id='card-'+key;
-    div.innerHTML = `<div class="icon" style="background:${p.color}">${p.name[0]}</div><div class="info"><strong>${p.name}</strong><div class="small">R$ ${p.cost}</div></div>`;
-    div.onclick = ()=>{ if(money>=p.cost && !plantCooldowns[key]){ setSelected(key);} else {setSelected(key);} };
+    div.className = 'card';
+    div.id = 'card-'+key;
+    div.innerHTML = `<div class="icon" style="background:${p.color}">${p.name[0]}</div>
+      <div class="info"><strong>${p.name}</strong><div class="small">R$ ${p.cost}</div></div>`;
+    div.onclick = ()=> setSelected(key);
     toolbarEl.appendChild(div);
   }
 }
 function setSelected(key){
   selectedPlantKey = key;
   Array.from(toolbarEl.children).forEach(c=>c.classList.remove('selected'));
-  const el = document.getElementById('card-'+key);
-  if(el) el.classList.add('selected');
+  const el = document.getElementById('card-'+key); if(el) el.classList.add('selected');
 }
-
 initToolbar();
 
-// Input
-canvas.addEventListener('click',e=>{
+/* ----- Input: plantar ----- */
+canvas.addEventListener('click', e=>{
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
   const col = Math.floor(x / CELL);
   const row = Math.floor(y / CELL);
-  if(selectedPlantKey){
-    placePlant(selectedPlantKey,row,col);
-  }
+  if(selectedPlantKey) placePlant(selectedPlantKey, row, col);
 });
 
-function placePlant(key,row,col){
+function placePlant(key, row, col){
   if(row<0||col<0||row>=ROWS||col>=COLS) return;
-  if(grid[row][col]) return; // already occupied
+  if(grid[row][col]) return;
   const spec = PLANTS[key];
   if(money < spec.cost) return;
   if(plantCooldowns[key]) return;
   money -= spec.cost; updateMoney();
-  grid[row][col] = {key, row, col, hp: spec.hp || 9999, spec, born:performance.now()};
-  plants.push(grid[row][col]);
-  // set cooldown
+  const pla = { key, row, col, hp: spec.hp, spec, born: performance.now() };
+  grid[row][col] = pla;
+  plants.push(pla);
   plantCooldowns[key] = true;
-  setTimeout(()=>{ delete plantCooldowns[key]; updateToolbarLocks(); }, spec.cooldown*1000);
   updateToolbarLocks();
+  setTimeout(()=>{ delete plantCooldowns[key]; updateToolbarLocks(); }, spec.cooldown * 1000);
 }
 
 function updateToolbarLocks(){
@@ -142,162 +181,284 @@ function updateToolbarLocks(){
     el.classList.toggle('locked', locked);
   }
 }
-
 function updateMoney(){ moneyEl.textContent = money; updateToolbarLocks(); }
 
-// Game loop
+/* ----- Spawn zumbi ----- */
 function spawnZombie(){
-  const row = Math.floor(Math.random()*ROWS);
-  const z = {x: CANVAS_W + 40, y: row*CELL + CELL/2, row, hp: ZOMBIE.hp, speed: ZOMBIE.speed, color: ZOMBIE.color, w: CELL*ZOMBIE.size, h: CELL*ZOMBIE.size, alive:true, id: Math.random()}
+  const row = Math.floor(Math.random() * ROWS);
+  const z = {
+    x: CANVAS_W + 40,
+    y: row * CELL + CELL/2,
+    row,
+    hp: CONFIG.zumbiVida,
+    speed: CONFIG.zumbiVelocidade,
+    w: CELL * CONFIG.zumbiTamanho,
+    h: CELL * CONFIG.zumbiTamanho
+  };
   zombies.push(z);
+  updateZombieCounter();
 }
 
-function update(dt){
-  // spawn
-  lastSpawn += dt;
-  if(lastSpawn > spawnInterval){ lastSpawn = 0; spawnZombie(); }
+/* ----- Wave system ----- */
+/* currentWaveIndex points into CONFIG.ondas.
+   realWaveNumber increments only when starting a wave with count>0.
+*/
+function startNextWave(){
+  currentWaveIndex++;
+  if(currentWaveIndex >= CONFIG.ondas.length){
+    // all waves done (including prep)
+    showWaveMessage('Vitória!');
+    running = false;
+    return;
+  }
 
-  // plants behavior
+  const wave = CONFIG.ondas[currentWaveIndex];
+
+  // If wave is the prep (count==0), show its text (e.g. "Plantar!!!"),
+  // wait wave.delay and then automatically go to next wave.
+  if(wave.count === 0){
+    showWaveMessage(wave.texto || 'Prepare-se...', wave.delay);
+    // call next wave after delay:
+    setTimeout(()=> startNextWave(), wave.delay);
+    return;
+  }
+
+  // Real wave
+  realWaveNumber++;
+  updateWaveCounter();
+  showWaveMessage(wave.texto || `Onda ${realWaveNumber}`, 1200);
+
+  // spawn zombies spaced by wave.delay
+  for(let i=0;i<wave.count;i++){
+    setTimeout(()=> spawnZombie(), i * wave.delay);
+  }
+  inWave = true;
+  // ensure z-counter gets updated (will update when spawnZombie called)
+}
+
+function showWaveMessage(text, autoHideMs = 1500){
+  waveMsg.textContent = text;
+  waveMsg.style.opacity = '1';
+  // clear after autoHideMs
+  setTimeout(()=> {
+    // fade
+    waveMsg.style.transition = 'opacity 400ms';
+    waveMsg.style.opacity = '0';
+    setTimeout(()=> { waveMsg.textContent = ''; waveMsg.style.transition = ''; }, 500);
+  }, autoHideMs);
+}
+
+function updateWaveCounter(){
+  waveCounterEl.textContent = `Onda: ${realWaveNumber} / ${totalRealWaves}`;
+}
+function updateZombieCounter(){ zombieCounterEl.textContent = `Zumbis: ${zombies.length}`; }
+
+/* ----- Game loop: update & draw ----- */
+function update(dt){
   const now = performance.now();
+
+  // Plants behavior
   for(const p of plants){
     const spec = p.spec;
     if(spec.type === 'sun'){
       if(!p._lastProduce) p._lastProduce = now;
-      if(now - p._lastProduce > spec.produceTime*1000){ money += spec.produce; p._lastProduce = now; updateMoney(); }
+      if(now - p._lastProduce > spec.produceTime * 1000){
+        money += spec.produce;
+        p._lastProduce = now;
+        updateMoney();
+      }
     }
     if(spec.type === 'shooter'){
       if(!p._lastFire) p._lastFire = now;
-      if(now - p._lastFire > spec.fireRate*1000){
-        // find target in same row to the right
-        const target = zombies.find(z=>z.row === p.row && z.x > p.col*CELL);
-        if(target){ bullets.push({x: p.col*CELL + CELL*0.6, y: p.row*CELL + CELL/2, vx: 320, vy:0, dmg: spec.dmg}); p._lastFire = now; }
+      if(now - p._lastFire > spec.fireRate * 1000){
+        // fire only if zombie to the right in same row
+        const target = zombies.find(z => z.row === p.row && z.x > p.col * CELL);
+        if(target){
+          bullets.push({ x: p.col * CELL + CELL*0.6, y: p.row*CELL + CELL/2, vx: 320, dmg: spec.dmg });
+          p._lastFire = now;
+        }
       }
     }
   }
 
-  // bullets
-  for(let i=bullets.length-1;i>=0;i--){
-    const b = bullets[i]; b.x += b.vx * (dt/1000);
-    // collision with zombies
+  // Bullets movement & collisions
+  for(let i = bullets.length - 1; i >= 0; i--){
+    const b = bullets[i];
+    b.x += b.vx * (dt/1000);
     for(const z of zombies){
-      if(Math.abs(b.y - z.y) < CELL*0.5 && b.x > z.x - z.w/2 && b.x < z.x + z.w/2){ z.hp -= b.dmg; bullets.splice(i,1); break; }
+      if(Math.abs(b.y - z.y) < CELL*0.5 && b.x > z.x - z.w/2 && b.x < z.x + z.w/2){
+        z.hp -= b.dmg;
+        bullets.splice(i,1);
+        break;
+      }
     }
     if(b && b.x > CANVAS_W + 20) bullets.splice(i,1);
   }
 
-  // zombies movement & attack
-  for(let i=zombies.length-1;i>=0;i--){
+  // Zombies movement & attack plants
+  for(let i = zombies.length -1; i >= 0; i--){
     const z = zombies[i];
-    if(!z.alive) continue;
-    // check for plant in same cell in front
+    // if there's a plant in front (cell where its head is), bite it
     const col = Math.floor((z.x - 10) / CELL);
     if(col >= 0 && col < COLS){
       const plant = grid[z.row][col];
       if(plant){
-        // attack barrier plant slowly
-        z.vx = 0;
         if(!z._lastBite) z._lastBite = performance.now();
-        if(performance.now() - z._lastBite > 600){ plant.hp -= 1; z._lastBite = performance.now(); if(plant.hp <= 0){ grid[plant.row][plant.col]=null; plants = plants.filter(p=>p!==plant); } }
+        if(performance.now() - z._lastBite > 600){
+          plant.hp -= 1;
+          z._lastBite = performance.now();
+          if(plant.hp <= 0){
+            grid[plant.row][plant.col] = null;
+            plants = plants.filter(p => p !== plant);
+          }
+        }
       } else {
         z.x -= z.speed * (dt/1000);
       }
     } else {
       z.x -= z.speed * (dt/1000);
     }
+
     // dead?
-    if(z.hp <= 0){ z.alive = false; zombies.splice(i,1); }
-    // reached left? game over if reach 0
-    if(z.x < 0){ running = false; alert('Game Over — um zumbi passou!'); resetGame(); return; }
+    if(z.hp <= 0){
+      zombies.splice(i,1);
+      updateZombieCounter();
+      continue;
+    }
+
+    // reached left -> game over
+    if(z.x < 0){
+      running = false;
+      alert('Game Over — um zumbi passou!');
+      resetGame();
+      return;
+    }
+  }
+
+  // Check end of wave: if inWave and no zombies alive -> wave complete
+  if(inWave && zombies.length === 0){
+    inWave = false;
+    showWaveMessage(`Onda ${realWaveNumber} completa!`, 2000);
+    // start next real wave after short delay (e.g. 2s)
+    setTimeout(()=> {
+      // If still have remaining waves, start next; otherwise victory will be handled in startNextWave
+      startNextWave();
+    }, 2000);
   }
 }
 
+/* ----- Rendering ----- */
 function draw(){
-  // background grid (chess-like on grass)
+  // draw grid (chess-like)
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
   for(let r=0;r<ROWS;r++){
     for(let c=0;c<COLS;c++){
       const x = c*CELL, y = r*CELL;
-      ctx.fillStyle = ( (r+c)%2 === 0) ? '#8fd064' : '#85c457';
-      roundRect(ctx,x+4,y+4,CELL-8,CELL-8,10,true,false);
+      ctx.fillStyle = ((r+c) % 2 === 0) ? '#8fd064' : '#85c457';
+      ctx.fillRect(x+4, y+4, CELL-8, CELL-8);
     }
   }
 
   // plants
   for(const p of plants){
-    const x = p.col*CELL + CELL/2; const y = p.row*CELL + CELL/2; const size = CELL * p.spec.size * 0.8;
+    const x = p.col*CELL + CELL/2;
+    const y = p.row*CELL + CELL/2;
+    const size = CELL * 0.7;
     ctx.fillStyle = p.spec.color;
-    ctx.strokeStyle = '#2f2f2f22';
     ctx.fillRect(x - size/2, y - size/2, size, size);
-    // hp bar for barriers
-    if(p.spec.type==='barrier'){
-      ctx.fillStyle = '#00000022'; ctx.fillRect(p.col*CELL+8, p.row*CELL+8, CELL-16,8);
-      const hpPct = Math.max(0,p.hp / p.spec.hp);
-      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(p.col*CELL+8, p.row*CELL+8, (CELL-16)*hpPct,8);
+    // HP bar for barriers
+    if(p.spec.type === 'barrier'){
+      ctx.fillStyle = '#00000033';
+      ctx.fillRect(p.col*CELL + 8, p.row*CELL + 8, CELL-16, 8);
+      const hpPct = Math.max(0, p.hp / p.spec.hp);
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(p.col*CELL + 8, p.row*CELL + 8, (CELL-16)*hpPct, 8);
     }
   }
 
   // bullets
   for(const b of bullets){
     ctx.fillStyle = '#fff';
-    ctx.fillRect(b.x-6,b.y-6,12,12);
+    ctx.fillRect(b.x-6, b.y-6, 12, 12);
   }
 
   // zombies
   for(const z of zombies){
-    ctx.fillStyle = z.color; ctx.fillRect(z.x - z.w/2, z.y - z.h/2, z.w, z.h);
-    // hp
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(z.x - z.w/2, z.y - z.h/2 - 8, z.w,6);
-    const pct = Math.max(0,z.hp / ZOMBIE.hp); ctx.fillStyle = '#ff6b6b'; ctx.fillRect(z.x - z.w/2, z.y - z.h/2 - 8, z.w * pct,6);
-  }
-
-  // HUD: selected plant highlight on grid
-  if(selectedPlantKey){
-    // draw icon following mouse? simple: draw on top-left the selected card
+    ctx.fillStyle = '#9b6b6b';
+    ctx.fillRect(z.x - z.w/2, z.y - z.h/2, z.w, z.h);
+    // hp bar
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(z.x - z.w/2, z.y - z.h/2 - 8, z.w, 6);
+    const pct = Math.max(0, z.hp / CONFIG.zumbiVida);
+    ctx.fillStyle = '#ff6b6b';
+    ctx.fillRect(z.x - z.w/2, z.y - z.h/2 - 8, z.w * pct, 6);
   }
 }
 
-function roundRect(ctx,x,y,w,h,r,fill,stroke){ if(typeof r==='undefined') r=5; ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); if(fill) ctx.fill(); if(stroke) ctx.stroke(); }
-
+/* ----- Game loop wrapper ----- */
+let prevTime = performance.now();
 function loop(now){
-  const dt = now - lastTime; lastTime = now;
+  const dt = now - prevTime;
+  prevTime = now;
   if(running) update(dt);
   draw();
   requestAnimationFrame(loop);
 }
 
-// Controls
-document.getElementById('startBtn').onclick = ()=>{ running = !running; document.getElementById('startBtn').textContent = running ? 'Pausar' : 'Iniciar'; };
-document.getElementById('resetBtn').onclick = resetGame;
-function resetGame(){ money = START_MONEY; updateMoney(); grid = Array.from({length:ROWS},()=>Array(COLS).fill(null)); plants = []; bullets = []; zombies = []; running=false; document.getElementById('startBtn').textContent='Iniciar'; }
-
-// initial spawn some zombies slowly
-setInterval(()=>{ if(running && Math.random()<0.1) spawnZombie(); }, 9000);
-
-// initial money update
-updateMoney();
-requestAnimationFrame(loop);
-
-// small enhancements: show costs and cooldowns in toolbar
-function refreshCooldownDisplay(){
-  for(const key of Object.keys(PLANTS)){
-    const el = document.getElementById('card-'+key);
-    if(!el) continue;
-    const spec = PLANTS[key];
-    const cd = plantCooldowns[key] ? ' (CD)' : '';
-    el.querySelector('.info').querySelector('div').textContent = `R$ ${spec.cost}${cd}`;
+/* ----- Controls: start/reset + countdown ----- */
+document.getElementById('startBtn').onclick = ()=>{
+  if(!running && currentWaveIndex === -1){
+    // show quick 3..2..1 count, then start waves (startNextWave handles prep wave if there is one)
+    startCountdownAndBegin();
   }
-}
-setInterval(refreshCooldownDisplay,300);
+  running = !running;
+  document.getElementById('startBtn').textContent = running ? 'Pausar' : 'Iniciar';
+};
 
-// helper: place starter plants for demo
-function demoSetup(){
-  // place a sunflower in each of first two cols
-  for(let r=0;r<ROWS;r++){ if(!grid[r][1]) placePlant('sunflower',r,1); }
-}
-// demoSetup();
+document.getElementById('resetBtn').onclick = resetGame;
 
-// start paused
-running = false;
+function startCountdownAndBegin(){
+  let count = 3;
+  waveMsg.textContent = count;
+  waveMsg.style.opacity = '1';
+  const t = setInterval(()=>{
+    count--;
+    if(count > 0) waveMsg.textContent = count;
+    else if(count === 0) waveMsg.textContent = 'Plantar!!!';
+    else {
+      clearInterval(t);
+      waveMsg.textContent = '';
+      // start waves sequence from beginning
+      startNextWave();
+    }
+  }, 1000);
+}
+
+function resetGame(){
+  // reset everything
+  money = CONFIG.dinheiroInicial;
+  updateMoney();
+  grid = Array.from({length:ROWS},()=>Array(COLS).fill(null));
+  plants = [];
+  bullets = [];
+  zombies = [];
+  plantCooldowns = {};
+  selectedPlantKey = null;
+  running = false;
+  currentWaveIndex = -1;
+  realWaveNumber = 0;
+  inWave = false;
+  waveMsg.textContent = '';
+  updateWaveCounter();
+  updateZombieCounter();
+  document.getElementById('startBtn').textContent = 'Iniciar';
+}
+
+/* ----- Initialize UI & start loop ----- */
+updateMoney();
+updateWaveCounter();
+updateZombieCounter();
+requestAnimationFrame(loop);
 
 </script>
 </body>
